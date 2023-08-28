@@ -6881,7 +6881,10 @@ static int tg3_rx(struct tg3_napi *tnapi, int budget)
 
 			ri->data = NULL;
 
-			skb = build_skb(data, frag_size);
+			if (frag_size)
+				skb = build_skb(data, frag_size);
+			else
+				skb = slab_build_skb(data);
 			if (!skb) {
 				tg3_frag_free(frag_size != 0, data);
 				goto drop_it_no_recycle;
@@ -17792,10 +17795,7 @@ static int tg3_init_one(struct pci_dev *pdev,
 		tnapi->tx_pending = TG3_DEF_TX_RING_PENDING;
 
 		tnapi->int_mbox = intmbx;
-		if (i <= 4)
-			intmbx += 0x8;
-		else
-			intmbx += 0x4;
+		intmbx += 0x8;
 
 		tnapi->consmbox = rcvmbx;
 		tnapi->prodmbox = sndmbx;
