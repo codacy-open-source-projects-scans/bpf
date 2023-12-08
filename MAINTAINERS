@@ -15068,6 +15068,7 @@ F:	lib/random32.c
 F:	net/
 F:	tools/net/
 F:	tools/testing/selftests/net/
+X:	net/9p/
 X:	net/bluetooth/
 
 NETWORKING [IPSEC]
@@ -22079,6 +22080,7 @@ F:	drivers/watchdog/tqmx86_wdt.c
 TRACING
 M:	Steven Rostedt <rostedt@goodmis.org>
 M:	Masami Hiramatsu <mhiramat@kernel.org>
+R:	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 L:	linux-kernel@vger.kernel.org
 L:	linux-trace-kernel@vger.kernel.org
 S:	Maintained
