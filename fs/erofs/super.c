@@ -430,7 +430,6 @@ static bool erofs_fc_set_dax_mode(struct fs_context *fc, unsigned int mode)
 
 	switch (mode) {
 	case EROFS_MOUNT_DAX_ALWAYS:
-		warnfc(fc, "DAX enabled. Warning: EXPERIMENTAL, use at your own risk");
 		set_opt(&ctx->opt, DAX_ALWAYS);
 		clear_opt(&ctx->opt, DAX_NEVER);
 		return true;
@@ -857,7 +856,7 @@ static int __init erofs_module_init(void)
 
 	erofs_inode_cachep = kmem_cache_create("erofs_inode",
 			sizeof(struct erofs_inode), 0,
-			SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD | SLAB_ACCOUNT,
+			SLAB_RECLAIM_ACCOUNT | SLAB_ACCOUNT,
 			erofs_inode_init_once);
 	if (!erofs_inode_cachep)
 		return -ENOMEM;
