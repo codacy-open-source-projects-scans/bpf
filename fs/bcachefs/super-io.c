@@ -143,7 +143,7 @@ void bch2_free_super(struct bch_sb_handle *sb)
 {
 	kfree(sb->bio);
 	if (!IS_ERR_OR_NULL(sb->s_bdev_file))
-		fput(sb->s_bdev_file);
+		bdev_fput(sb->s_bdev_file);
 	kfree(sb->holder);
 	kfree(sb->sb_name);
 
@@ -700,8 +700,11 @@ retry:
 		return -ENOMEM;
 
 	sb->sb_name = kstrdup(path, GFP_KERNEL);
-	if (!sb->sb_name)
-		return -ENOMEM;
+	if (!sb->sb_name) {
+		ret = -ENOMEM;
+		prt_printf(&err, "error allocating memory for sb_name");
+		goto err;
+	}
 
 #ifndef __KERNEL__
 	if (opt_get(*opts, direct_io) == false)
