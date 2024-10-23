@@ -252,10 +252,6 @@ extern int cifs_read_from_socket(struct TCP_Server_Info *server, char *buf,
 			         unsigned int to_read);
 extern ssize_t cifs_discard_from_socket(struct TCP_Server_Info *server,
 					size_t to_read);
-extern int cifs_read_page_from_socket(struct TCP_Server_Info *server,
-					struct page *page,
-					unsigned int page_offset,
-					unsigned int to_read);
 int cifs_read_iter_from_socket(struct TCP_Server_Info *server,
 			       struct iov_iter *iter,
 			       unsigned int to_read);
@@ -623,8 +619,6 @@ enum securityEnum cifs_select_sectype(struct TCP_Server_Info *,
 int cifs_alloc_hash(const char *name, struct shash_desc **sdesc);
 void cifs_free_hash(struct shash_desc **sdesc);
 
-struct cifs_chan *
-cifs_ses_find_chan(struct cifs_ses *ses, struct TCP_Server_Info *server);
 int cifs_try_adding_channels(struct cifs_ses *ses);
 bool is_server_using_iface(struct TCP_Server_Info *server,
 			   struct cifs_server_iface *iface);
@@ -640,9 +634,6 @@ cifs_chan_set_in_reconnect(struct cifs_ses *ses,
 void
 cifs_chan_clear_in_reconnect(struct cifs_ses *ses,
 			       struct TCP_Server_Info *server);
-bool
-cifs_chan_in_reconnect(struct cifs_ses *ses,
-			  struct TCP_Server_Info *server);
 void
 cifs_chan_set_need_reconnect(struct cifs_ses *ses,
 			     struct TCP_Server_Info *server);
@@ -724,15 +715,9 @@ static inline int cifs_create_options(struct cifs_sb_info *cifs_sb, int options)
 
 int cifs_wait_for_server_reconnect(struct TCP_Server_Info *server, bool retry);
 
-/* Put references of @ses and its children */
 static inline void cifs_put_smb_ses(struct cifs_ses *ses)
 {
-	struct cifs_ses *next;
-
-	do {
-		next = ses->dfs_root_ses;
-		__cifs_put_smb_ses(ses);
-	} while ((ses = next));
+	__cifs_put_smb_ses(ses);
 }
 
 /* Get an active reference of @ses and its children.
@@ -746,9 +731,7 @@ static inline void cifs_put_smb_ses(struct cifs_ses *ses)
 static inline void cifs_smb_ses_inc_refcount(struct cifs_ses *ses)
 {
 	lockdep_assert_held(&cifs_tcp_ses_lock);
-
-	for (; ses; ses = ses->dfs_root_ses)
-		ses->ses_count++;
+	ses->ses_count++;
 }
 
 static inline bool dfs_src_pathname_equal(const char *s1, const char *s2)

@@ -2886,7 +2886,6 @@ static ssize_t reset_all_on_write(struct file *filp, const char __user *buf,
 static const struct file_operations fops_reset_counts = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.llseek = no_llseek,
 	.write = reset_all_on_write,
 };
 
@@ -2977,10 +2976,8 @@ static struct scmi_debug_info *scmi_debugfs_common_setup(struct scmi_info *info)
 	dbg->top_dentry = top_dentry;
 
 	if (devm_add_action_or_reset(info->dev,
-				     scmi_debugfs_common_cleanup, dbg)) {
-		scmi_debugfs_common_cleanup(dbg);
+				     scmi_debugfs_common_cleanup, dbg))
 		return NULL;
-	}
 
 	return dbg;
 }
