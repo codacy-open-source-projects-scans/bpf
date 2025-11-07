@@ -55,7 +55,7 @@
 
 #define USER_PTRS_PER_PGD       ((TASK_SIZE64 / PGDIR_SIZE)?(TASK_SIZE64 / PGDIR_SIZE):1)
 
-#ifndef __ASSEMBLY__
+#ifndef __ASSEMBLER__
 
 #include <linux/mm_types.h>
 #include <linux/mmzone.h>
@@ -255,7 +255,6 @@ static inline void pmd_clear(pmd_t *pmdp)
 
 #define pmd_page_vaddr(pmd)	pmd_val(pmd)
 
-extern pmd_t mk_pmd(struct page *page, pgprot_t prot);
 extern void set_pmd_at(struct mm_struct *mm, unsigned long addr, pmd_t *pmdp, pmd_t pmd);
 
 #define pte_page(x)		pfn_to_page(pte_pfn(x))
@@ -268,7 +267,11 @@ extern void set_pmd_at(struct mm_struct *mm, unsigned long addr, pmd_t *pmdp, pm
  */
 extern void pgd_init(void *addr);
 extern void pud_init(void *addr);
+#define pud_init pud_init
 extern void pmd_init(void *addr);
+#define pmd_init pmd_init
+extern void kernel_pte_init(void *addr);
+#define kernel_pte_init kernel_pte_init
 
 /*
  * Encode/decode swap entries and swap PTEs. Swap PTEs are all PTEs that
@@ -298,7 +301,7 @@ static inline pte_t mk_swap_pte(unsigned long type, unsigned long offset)
 #define __pmd_to_swp_entry(pmd) ((swp_entry_t) { pmd_val(pmd) })
 #define __swp_entry_to_pmd(x)	((pmd_t) { (x).val | _PAGE_HUGE })
 
-static inline int pte_swp_exclusive(pte_t pte)
+static inline bool pte_swp_exclusive(pte_t pte)
 {
 	return pte_val(pte) & _PAGE_SWP_EXCLUSIVE;
 }
@@ -325,39 +328,17 @@ static inline void set_pte(pte_t *ptep, pte_t pteval)
 {
 	WRITE_ONCE(*ptep, pteval);
 
-	if (pte_val(pteval) & _PAGE_GLOBAL) {
-		pte_t *buddy = ptep_buddy(ptep);
-		/*
-		 * Make sure the buddy is global too (if it's !none,
-		 * it better already be global)
-		 */
-		if (pte_none(ptep_get(buddy))) {
 #ifdef CONFIG_SMP
-			/*
-			 * For SMP, multiple CPUs can race, so we need
-			 * to do this atomically.
-			 */
-			__asm__ __volatile__(
-			__AMOR "$zero, %[global], %[buddy] \n"
-			: [buddy] "+ZB" (buddy->pte)
-			: [global] "r" (_PAGE_GLOBAL)
-			: "memory");
-
-			DBAR(0b11000); /* o_wrw = 0b11000 */
-#else /* !CONFIG_SMP */
-			WRITE_ONCE(*buddy, __pte(pte_val(ptep_get(buddy)) | _PAGE_GLOBAL));
-#endif /* CONFIG_SMP */
-		}
-	}
+	if (pte_val(pteval) & _PAGE_GLOBAL)
+		DBAR(0b11000); /* o_wrw = 0b11000 */
+#endif
 }
 
 static inline void pte_clear(struct mm_struct *mm, unsigned long addr, pte_t *ptep)
 {
-	/* Preserve global status for the pair */
-	if (pte_val(ptep_get(ptep_buddy(ptep))) & _PAGE_GLOBAL)
-		set_pte(ptep, __pte(_PAGE_GLOBAL));
-	else
-		set_pte(ptep, __pte(0));
+	pte_t pte = ptep_get(ptep);
+	pte_val(pte) &= _PAGE_GLOBAL;
+	set_pte(ptep, pte);
 }
 
 #define PGD_T_LOG2	(__builtin_ffs(sizeof(pgd_t)) - 1)
@@ -428,9 +409,6 @@ static inline int pte_special(pte_t pte)	{ return pte_val(pte) & _PAGE_SPECIAL; 
 static inline pte_t pte_mkspecial(pte_t pte)	{ pte_val(pte) |= _PAGE_SPECIAL; return pte; }
 #endif /* CONFIG_ARCH_HAS_PTE_SPECIAL */
 
-static inline int pte_devmap(pte_t pte)		{ return !!(pte_val(pte) & _PAGE_DEVMAP); }
-static inline pte_t pte_mkdevmap(pte_t pte)	{ pte_val(pte) |= _PAGE_DEVMAP; return pte; }
-
 #define pte_accessible pte_accessible
 static inline unsigned long pte_accessible(struct mm_struct *mm, pte_t a)
 {
@@ -443,12 +421,6 @@ static inline unsigned long pte_accessible(struct mm_struct *mm, pte_t a)
 
 	return false;
 }
-
-/*
- * Conversion functions: convert a page and protection to a page entry,
- * and a page entry and page directory to the page they refer to.
- */
-#define mk_pte(page, pgprot)	pfn_pte(page_to_pfn(page), (pgprot))
 
 static inline pte_t pte_modify(pte_t pte, pgprot_t newprot)
 {
@@ -565,17 +537,6 @@ static inline pmd_t pmd_mkyoung(pmd_t pmd)
 	return pmd;
 }
 
-static inline int pmd_devmap(pmd_t pmd)
-{
-	return !!(pmd_val(pmd) & _PAGE_DEVMAP);
-}
-
-static inline pmd_t pmd_mkdevmap(pmd_t pmd)
-{
-	pmd_val(pmd) |= _PAGE_DEVMAP;
-	return pmd;
-}
-
 static inline struct page *pmd_page(pmd_t pmd)
 {
 	if (pmd_trans_huge(pmd))
@@ -631,11 +592,6 @@ static inline long pmd_protnone(pmd_t pmd)
 #define pmd_leaf(pmd)		((pmd_val(pmd) & _PAGE_HUGE) != 0)
 #define pud_leaf(pud)		((pud_val(pud) & _PAGE_HUGE) != 0)
 
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
-#define pud_devmap(pud)		(0)
-#define pgd_devmap(pgd)		(0)
-#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
-
 /*
  * We provide our own get_unmapped area to cope with the virtual aliasing
  * constraints placed on us by the cache architecture.
@@ -643,6 +599,6 @@ static inline long pmd_protnone(pmd_t pmd)
 #define HAVE_ARCH_UNMAPPED_AREA
 #define HAVE_ARCH_UNMAPPED_AREA_TOPDOWN
 
-#endif /* !__ASSEMBLY__ */
+#endif /* !__ASSEMBLER__ */
 
 #endif /* _ASM_PGTABLE_H */

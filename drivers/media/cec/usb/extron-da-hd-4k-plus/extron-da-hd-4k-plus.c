@@ -28,7 +28,7 @@
 
 #include "extron-da-hd-4k-plus.h"
 
-MODULE_AUTHOR("Hans Verkuil <hansverk@cisco.com>");
+MODULE_AUTHOR("Hans Verkuil <hverkuil@kernel.org>");
 MODULE_DESCRIPTION("Extron DA HD 4K PLUS HDMI CEC driver");
 MODULE_LICENSE("GPL");
 
@@ -348,12 +348,12 @@ static int get_edid_tag_location(const u8 *edid, unsigned int size,
 
 	/* Return if not a CTA-861 extension block */
 	if (size < 256 || edid[0] != 0x02 || edid[1] != 0x03)
-		return -1;
+		return -ENOENT;
 
 	/* search tag */
 	d = edid[0x02] & 0x7f;
 	if (d <= 4)
-		return -1;
+		return -ENOENT;
 
 	i = 0x04;
 	end = 0x00 + d;
@@ -371,7 +371,7 @@ static int get_edid_tag_location(const u8 *edid, unsigned int size,
 			return offset + i;
 		i += len + 1;
 	} while (i < end);
-	return -1;
+	return -ENOENT;
 }
 
 static void extron_edid_crc(u8 *edid)
@@ -1002,8 +1002,8 @@ static int extron_cec_adap_transmit(struct cec_adapter *adap, u8 attempts,
 				    u32 signal_free_time, struct cec_msg *msg)
 {
 	struct extron_port *port = cec_get_drvdata(adap);
-	char buf[CEC_MAX_MSG_SIZE * 3 + 1];
-	char cmd[CEC_MAX_MSG_SIZE * 3 + 13];
+	char buf[(CEC_MAX_MSG_SIZE - 1) * 3 + 1];
+	char cmd[sizeof(buf) + 14];
 	unsigned int i;
 
 	if (port->disconnected)
@@ -1252,7 +1252,7 @@ static int extron_s_output(struct file *file, void *priv, unsigned int o)
 	return o ? -EINVAL : 0;
 }
 
-static int extron_g_edid(struct file *file, void *_fh,
+static int extron_g_edid(struct file *file, void *priv,
 			 struct v4l2_edid *edid)
 {
 	struct extron_port *port = video_drvdata(file);
@@ -1280,7 +1280,7 @@ static int extron_g_edid(struct file *file, void *_fh,
 	return 0;
 }
 
-static int extron_s_edid(struct file *file, void *_fh, struct v4l2_edid *edid)
+static int extron_s_edid(struct file *file, void *priv, struct v4l2_edid *edid)
 {
 	struct extron_port *port = video_drvdata(file);
 
