@@ -3009,12 +3009,6 @@ static int init_arena_map_data(struct bpf_object *obj, struct bpf_map *map,
 	memcpy(obj->arena_data, data, data_sz);
 	obj->arena_data_sz = data_sz;
 
-	/*
-	 * possible offset for arena globals into the arena,
-	 * if supported at load time
-	 */
-	obj->arena_data_off = mmap_sz - data_alloc_sz;
-
 	/* make bpf_map__init_value() work for ARENA maps */
 	map->mmaped = obj->arena_data;
 
@@ -5556,7 +5550,6 @@ bpf_object__create_maps(struct bpf_object *obj)
 {
 	struct bpf_map *map;
 	unsigned int i, j;
-	char *arena_globals;
 	int err;
 	bool retried;
 
@@ -5634,15 +5627,7 @@ retry:
 					return err;
 				}
 				if (obj->arena_data) {
-					/*
-					 * Only relocate the globals to the end of the arena
-					 * if the kernel supports it.
-					 */
-					arena_globals = map->mmaped;
-					if (kernel_supports(obj, FEAT_LDIMM64_FULL_RANGE_OFF))
-						arena_globals += obj->arena_data_off;
-
-					memcpy(arena_globals, obj->arena_data,
+					memcpy(map->mmaped + obj->arena_data_off, obj->arena_data,
 						obj->arena_data_sz);
 					zfree(&obj->arena_data);
 				}
@@ -6396,10 +6381,8 @@ bpf_object__relocate_data(struct bpf_object *obj, struct bpf_program *prog)
 			map = &obj->maps[relo->map_idx];
 			insn[1].imm = insn[0].imm + relo->sym_off;
 
-			if (relo->map_idx == obj->arena_map_idx &&
-			    kernel_supports(obj, FEAT_LDIMM64_FULL_RANGE_OFF)) {
+			if (relo->map_idx == obj->arena_map_idx)
 				insn[1].imm += obj->arena_data_off;
-			}
 
 			if (obj->gen_loader) {
 				insn[0].src_reg = BPF_PSEUDO_MAP_IDX_VALUE;
@@ -7400,6 +7383,14 @@ static int bpf_object__relocate(struct bpf_object *obj, const char *targ_btf_pat
 			return err;
 		}
 		bpf_object__sort_relos(obj);
+	}
+
+	/* place globals at the end of the arena (if supported) */
+	if (obj->arena_map_idx >= 0 && kernel_supports(obj, FEAT_LDIMM64_FULL_RANGE_OFF)) {
+		struct bpf_map *arena_map = &obj->maps[obj->arena_map_idx];
+
+		obj->arena_data_off = bpf_map_mmap_sz(arena_map) -
+				      roundup(obj->arena_data_sz, sysconf(_SC_PAGE_SIZE));
 	}
 
 	/* Before relocating calls pre-process relocations and mark
@@ -14471,7 +14462,7 @@ int bpf_object__load_skeleton(struct bpf_object_skeleton *s)
 		if (!map_skel->mmaped)
 			continue;
 
-		if (map->def.type == BPF_MAP_TYPE_ARENA && kernel_supports(*s->obj, FEAT_LDIMM64_FULL_RANGE_OFF))
+		if (map->def.type == BPF_MAP_TYPE_ARENA)
 			*map_skel->mmaped = map->mmaped + map->obj->arena_data_off;
 		else
 			*map_skel->mmaped = map->mmaped;
